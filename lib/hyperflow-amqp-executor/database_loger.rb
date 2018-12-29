@@ -1,11 +1,15 @@
 require "influxdb"
 require 'thread'
+require 'prometheus/client'
+require 'net/http'
+
+require_relative 'prometheus_push'
 
 module Executor
 
     class DatabaseLoger
 
-        def initialize(database_url,id,jobId,procId,hfId,wfid,jobExecutable)
+        def initialize(database_url, prometheus_gateway_url, id,jobId,procId,hfId,wfid,jobExecutable)
             @id = id
             @jobId = jobId
             @hfId = hfId
@@ -22,6 +26,21 @@ module Executor
             @stageStartTime =nil
 
             @influxdb = nil
+
+            @registry = Prometheus::Client.registry
+            @prometheus_pushGateway = Prometheus::Client::Push.new('amqp-executor', id, prometheus_gateway_url)
+
+            @execution_times_running_time_gauge = Prometheus::Client::Gauge.new(:execution_times_running_time, 'execution_times_running_time')
+            @execution_times_downloading_time_gauge = Prometheus::Client::Gauge.new(:execution_times_downloading_time, 'execution_times_downloading_time')
+            @execution_times_execution_time_gauge = Prometheus::Client::Gauge.new(:execution_times_execution_time, 'execution_times_execution_time')
+            @execution_times_uploading_time_gauge = Prometheus::Client::Gauge.new(:execution_times_uploading_time, 'execution_times_uploading_time')
+
+            @registry.register(@execution_times_running_time_gauge)
+            @registry.register(@execution_times_downloading_time_gauge)
+            @registry.register(@execution_times_execution_time_gauge)
+            @registry.register(@execution_times_uploading_time_gauge)
+
+            @prometheus_pushGateway.add(@registry)
 
             if database_url.nil? || database_url.eql?("")
                 @influxdb = nil
@@ -109,6 +128,24 @@ module Executor
                 }
                 #Executor::logger.debug "write to database #{data}"
                 @influxdb.write_point(metric, data)
+
+                @execution_times_running_time_gauge.set(
+                    { wfid: @wfid, hfId: @hfId, workerId: @id , jobId: @jobId, procId: @procId},
+                    runing_time
+                )
+                @execution_times_downloading_time_gauge.set(
+                    { wfid: @wfid, hfId: @hfId, workerId: @id , jobId: @jobId, procId: @procId},
+                    @stagesTime["stage_in"]
+                )
+                @execution_times_execution_time_gauge.set(
+                    { wfid: @wfid, hfId: @hfId, workerId: @id , jobId: @jobId, procId: @procId},
+                    @stagesTime["execution"]
+                )
+                @execution_times_uploading_time_gauge.set(
+                    { wfid: @wfid, hfId: @hfId, workerId: @id , jobId: @jobId, procId: @procId},
+                    @stagesTime["stage_out"]
+                )
+                @prometheus_pushGateway.add(@registry)
             end
         end
 

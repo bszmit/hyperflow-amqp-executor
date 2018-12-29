@@ -1,4 +1,4 @@
-FROM krysp89/nfs-docker:latest
+FROM krysp89/hyperflow-nfs-docker:latest
 
 # Install Ruby and Rails dependencies
 RUN apt-get update && apt-get install -y \
@@ -23,6 +23,7 @@ ENV PATH $PATH:/Montage_v3.3_patched_4/bin
 
 RUN gem install influxdb &&\
     gem install pry &&\
+    gem install prometheus-client &&\
     gem build hyperflow-amqp-executor.gemspec && \
     gem install hyperflow-amqp-executor
 
